@@ -1,6 +1,6 @@
 import * as dotenv from "dotenv";
 dotenv.config();
-import { google, GoogleApis } from "googleapis";
+import {google} from "googleapis";
 
 const email = process.env.CLIENT_EMAIL;
 const key = process.env.PRIVATE_KEY.replace(new RegExp("\\\\n"), "\n");
@@ -15,49 +15,65 @@ const jwt = new google.auth.JWT({
   scopes,
 });
 
-//retrieve data
-async function getMetric(metric, startDate, endDate) {
-  await setTimeout[Object.getOwnPropertySymbols(setTimeout)[0]](
-    Math.trunc(1000 * Math.random())
-  );
+async function getData(data, startDate="30daysAgo", endDate="today"){
+  const response = await jwt.authorize();
 
-  const result = await analytics.data.ga.get({
-    auth: jwt,
-    ids: `ga:${viewId}`,
-    "start-date": startDate,
-    "end-date": endDate,
-    metrics: metric,
-  });
+  // is startDate and endDate not numbers?
+  const start =  isNaN(Number(startDate)) ? startDate : `${startDate}daysAgo`;
+  const end = isNaN(Number(endDate)) ? endDate : `${endDate}daysAgo`;
 
-  const res = {};
-  res[metric] = {
-    value: parseInt(result.data.totalsForAllResults[metric], 10),
-    start:startDate,
-    end: endDate,
+
+  const prop = {
+    'auth':jwt,
+    'ids':`ga:${viewId}`,
+    'start-date':start,
+    'end-date':end,
+    ...data
   }
 
-  return res;
+  try{
+    const result = await analytics.data.ga.get(prop)
+    return result;
+
+  }catch(err){
+    console.log("There was an error:", err);
+    return {errorMessage:err.errors}
+  }
 }
 
-//metric does not contains ga:?
-function parseMetric(metric){
-    let cleanMetric = metric;
-    if(!cleanMetric.startsWith('ga:')){
-        cleanMetric = `ga:${cleanMetric}`
-    }
+async function getMetric(metric, startDate, endDate){
+  const data = await getData({metrics:metric}, startDate, endDate);
 
-    return cleanMetric;
+  if(data.errorMessage){
+    return data.errorMessage;
+  }
+  
+  const result = {
+    value:parseInt(data.data.totalsForAllResults[metric], 10),
+    startDate: data.data.query['start-date'],
+    endDate: data.data.query['end-date']
+  };
+  return result
 }
 
-//Get metrics in batches
-function getData(metrics=['ga:users'], startDate='30daysAgo', endDate='today'){
-    const results = [];
-    for(let i = 0; i < metrics.length; i++){
-        const metric = parseMetric(metrics[i]);
-        results.push(getMetric(metric, startDate, endDate));
-    }
+async function getDimensions(metric, dimension, startDate, endDate){
+  const data = await getData({metrics: metric, dimensions: dimension}, startDate, endDate);
+  let rows = data.data.rows;
 
-    return results;
+  if(data.errorMessage){
+    return data.errorMessage;
+  }
+
+  rows = rows.map(elem =>{ return {dimension: elem[0], value: elem[1]}})
+
+  const result = {
+    array:rows,
+    startDate: data.data.query['start-date'],
+    endDate: data.data.query['end-date']
+  }
+
+  return result;
+
 }
 
-export default getData;
+export {getMetric, getDimensions}
